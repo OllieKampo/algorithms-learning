@@ -95,7 +95,26 @@ class LidarSimulator:
     def __init__(self):
         self.range_noise = 0.01
 
-    def get_observation_points(self, v_list, angle_resolution):
+    def get_observation_points(self, v_list: list[VehicleSimulator]) -> tuple[list[float], list[float], list[float], list[float], list[float]]:
+        """
+        Get observation points from a list of vehicles.
+
+        Parameters
+        ----------
+        v_list : list[VehicleSimulator]
+            List of vehicles
+
+        Returns
+        -------
+        x : list[float]
+            x positions of range points from an object
+        y : list[float]
+            y positions of range points from an object
+        angle : list[float]
+            angle of range points from an object
+        r : list[float]
+            range of range points from an object
+        """
         x, y, angle, r = [], [], [], []
 
         # store all points
@@ -113,68 +132,7 @@ class LidarSimulator:
                 angle.append(v_angle)
                 r.append(vr)
 
-        # ray casting filter
-        rx, ry = self.ray_casting_filter(angle, r, angle_resolution)
-
-        return rx, ry
-
-    # TODO: What if the points that are not hitting objects are not of infinite range value?
-    # How do we decide what a wall is? May need to add a max range threshold value instead of using inf.
-    # TODO: How do we get a 2D planar point cloud from a 3D point cloud? And how do we choose the height?
-    # TODO: May need to combine with circle fitting and grid map fitting to get this all to work and find
-    # both walls and objects in the environment
-    # TODO: If we combined with a vision based object detection and image segmentation algorithm, we could
-    # assign object IDs and segmented images with bounding boxes to the objects detected in the lidar data.
-    @staticmethod
-    def ray_casting_filter(theta_l: list[float], range_l: list[float], angle_resolution: float) -> tuple[list[float], list[float]]:
-        """
-        Filter a set of points using ray casting.
-
-        Reduce the number of points in a 2D point cloud data. It does this by
-        dividing the 2D space into sectors (like slices of a pie) and only
-        keeping the point closest to the origin in each sector. This is often
-        used in robotics, specifically in lidar data processing.
-
-        Args:
-            theta_l (list): The angles of the points from the origin.
-            range_l (list): The distances of the points from the origin.
-            angle_resolution (float): The size of each sector.
-
-        Returns:
-            list, list: The x and y coordinates of the filtered points.
-        """
-        inf = float("inf")
-        rx: list[float] = []
-        ry: list[float] = []
-
-        # Initialize a list of infinite values, one for each sector.
-        # The length of this list is determined by the angle_resolution parameter,
-        # which specifies the size of each sector. The smaller the angle_resolution,
-        # the more sectors there are.
-        range_db = [inf for _ in range(
-            int(np.floor((np.pi * 2.0) / angle_resolution)) + 1)]
-        theta_db = [0.0 for _ in range(len(range_db))]
-
-        # Iterate over all points.
-        for i in range(len(theta_l)):
-            # Calculate the id of the sector the point belongs to.
-            angle_id = int(round(theta_l[i] / angle_resolution))
-
-            # If the point is closer to the origin than the current closest point
-            # in that sector, update the closest point.
-            if range_db[angle_id] > range_l[i]:
-                range_db[angle_id] = range_l[i]
-                theta_db[angle_id] = theta_l[i]
-
-        # Convert the filtered data back into Cartesian coordinates.
-        for i in range(len(range_db)):
-            t = theta_db[i]
-            if range_db[i] != inf:
-                # Use the polar to cartesian conversion formulas.
-                rx.append(range_db[i] * np.cos(t))
-                ry.append(range_db[i] * np.sin(t))
-
-        return rx, ry
+        return x, y, angle, r
 
 
 class RectangleFitter:
@@ -451,6 +409,68 @@ class RectangleData:
         return intersect_coordinates_x, intersect_coordinates_y
 
 
+# TODO: What if the points that are not hitting objects are not of infinite range value?
+# How do we decide what a wall is? May need to add a max range threshold value instead of using inf.
+# TODO: How do we get a 2D planar point cloud from a 3D point cloud? And how do we choose the height?
+# TODO: May need to combine with circle fitting and grid map fitting to get this all to work and find
+# both walls and objects in the environment
+# TODO: If we combined with a vision based object detection and image segmentation algorithm, we could
+# assign object IDs and segmented images with bounding boxes to the objects detected in the lidar data.
+@staticmethod
+def ray_casting_filter(theta_l: list[float], range_l: list[float], angle_resolution: float) -> tuple[list[float], list[float]]:
+    """
+    Filter a set of points using ray casting.
+
+    Reduce the number of points in a 2D point cloud data. It does this by
+    dividing the 2D space into sectors (like slices of a pie) and only
+    keeping the point closest to the origin in each sector. This is often
+    used in robotics, specifically in lidar data processing.
+
+    Args:
+        theta_l (list): The angles of the points from the origin.
+        range_l (list): The distances of the points from the origin.
+        angle_resolution (float): The size of each sector.
+
+    Returns:
+        list, list: The x and y coordinates of the filtered points.
+    """
+    inf = float("inf")
+    rx: list[float] = []
+    ry: list[float] = []
+
+    # Initialize a list of infinite values, one for each sector.
+    # The length of this list is determined by the angle_resolution parameter,
+    # which specifies the size of each sector. The smaller the angle_resolution,
+    # the more sectors there are.
+    range_db = [inf for _ in range(
+        int(np.floor((np.pi * 2.0) / angle_resolution)) + 1)]
+    theta_db = [0.0 for _ in range(len(range_db))]
+
+    # Iterate over all points.
+    for i in range(len(theta_l)):  # pylint: disable=consider-using-enumerate
+        # Calculate the id of the sector the point belongs to.
+        angle_id = int(round(theta_l[i] / angle_resolution))
+
+        print(f"angle_id: {angle_id}")
+        print(f"Number of sectors: {len(range_db)}")
+
+        # If the point is closer to the origin than the current closest point
+        # in that sector, update the closest point.
+        if range_db[angle_id] > range_l[i]:
+            range_db[angle_id] = range_l[i]
+            theta_db[angle_id] = theta_l[i]
+
+    # Convert the filtered data back into Cartesian coordinates.
+    for i in range(len(range_db)):
+        t = theta_db[i]
+        if range_db[i] != inf:
+            # Use the polar to cartesian conversion formulas.
+            rx.append(range_db[i] * np.cos(t))
+            ry.append(range_db[i] * np.sin(t))
+
+    return rx, ry
+
+
 def main():
 
     # simulation parameters
@@ -474,7 +494,8 @@ def main():
         v1.update(dt, 0.1, 0.0)
         v2.update(dt, 0.1, -0.05)
 
-        ox, oy = lidar_sim.get_observation_points([v1, v2], angle_resolution)
+        unfiltered_ox, unfiltered_oy, angles, ranges = lidar_sim.get_observation_points([v1, v2])
+        ox, oy = ray_casting_filter(angles, ranges, angle_resolution)
 
         rects, id_sets = l_shape_fitting.fit(ox, oy)
 
@@ -490,12 +511,13 @@ def main():
             v1.plot()
             v2.plot()
 
+            for (ix, iy) in zip(unfiltered_ox, unfiltered_oy):
+                plt.plot([0.0, ix], [0.0, iy], "-k")
+
             # Plot range observations.
             for ids in id_sets:
-                # x = [ox[i] for i in ids]
-                # y = [oy[i] for i in ids]
-                x = ox
-                y = oy
+                x = [ox[i] for i in ids]
+                y = [oy[i] for i in ids]
 
                 # Plot the ray casts.
                 for (ix, iy) in zip(x, y):
