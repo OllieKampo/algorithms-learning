@@ -100,37 +100,6 @@ def atan_zero_to_twopi(y, x):
     return angle
 
 
-def init_flood_fill(
-    center_point: tuple[int, int],
-    points_x: np.ndarray,
-    points_y: np.ndarray,
-    grid_points_x: np.ndarray,
-    grid_points_y: np.ndarray,
-    min_coord: tuple[int, int],
-    xy_resolution: float
-):
-    """
-    center_point: center point
-    obstacle_points: detected obstacles points (x,y)
-    xy_points: (x,y) point pairs
-    """
-    center_x, center_y = center_point
-    prev_ix, prev_iy = center_x - 1, center_y
-    min_x, min_y = min_coord
-    occupancy_map = np.ones((grid_points_x, grid_points_y)) * 0.5
-    for (x, y) in zip(points_x, points_y):
-        # x coordinate of the occupied area
-        ix = int(round((x - min_x) / xy_resolution))
-        # y coordinate of the occupied area
-        iy = int(round((y - min_y) / xy_resolution))
-        free_area = bresenham((prev_ix, prev_iy), (ix, iy))
-        for fa in free_area:
-            occupancy_map[fa[0]][fa[1]] = 0  # free area 0.0
-        prev_ix = ix
-        prev_iy = iy
-    return occupancy_map
-
-
 def flood_fill(center_point, occupancy_map):
     """
     center_point: starting point (x,y) of fill
@@ -212,24 +181,30 @@ def generate_ray_casting_grid_map(
 
     # occupancy grid computed with with flood fill
     else:
-        occupancy_map = init_flood_fill(
-            (center_x, center_y),
-            points_x,
-            points_y,
-            x_w,
-            y_w,
-            (min_x, min_y),
-            xy_resolution
-        )
-        flood_fill((center_x, center_y), occupancy_map)
-        occupancy_map = np.array(occupancy_map, dtype=float)
-        for (x, y) in zip(points_x, points_y):
+        prev_ix, prev_iy = points_x[0], points_y[0]
+        ix = prev_ix = int(round((prev_ix - min_x) / xy_resolution))
+        iy = prev_iy = int(round((prev_iy - min_y) / xy_resolution))
+        occupancy_map[ix][iy] = 1.0  # occupied area 1.0
+        occupancy_map[ix + 1][iy] = 1.0  # extend the occupied area
+        occupancy_map[ix][iy + 1] = 1.0  # extend the occupied area
+        occupancy_map[ix + 1][iy + 1] = 1.0  # extend the occupied area
+        for (x, y) in zip(points_x[1:], points_y[1:]):
+            # x coordinate of the occupied area
             ix = int(round((x - min_x) / xy_resolution))
+            # y coordinate of the occupied area
             iy = int(round((y - min_y) / xy_resolution))
+            ray_between_obstacles = bresenham((prev_ix, prev_iy), (ix, iy))
+            for obstacle in ray_between_obstacles:
+                if occupancy_map[obstacle[0]][obstacle[1]] != 1.0:
+                    occupancy_map[obstacle[0]][obstacle[1]] = 0.0  # obstacle area 1.0
             occupancy_map[ix][iy] = 1.0  # occupied area 1.0
             occupancy_map[ix + 1][iy] = 1.0  # extend the occupied area
             occupancy_map[ix][iy + 1] = 1.0  # extend the occupied area
             occupancy_map[ix + 1][iy + 1] = 1.0  # extend the occupied area
+            prev_ix = ix
+            prev_iy = iy
+
+        flood_fill((center_x, center_y), occupancy_map)
 
     return occupancy_map
 
