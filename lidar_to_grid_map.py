@@ -1,3 +1,10 @@
+# To adjust for globe lidar data where the ground and ceiling are not flat:
+# Ray cast up from the floor to the ceiling, ignoring the first points as the floor and taking the second as the ceiling.
+# Then ray cast down from the ceiling to the floor, ignoring the first points as the ceiling and taking the second as the floor.
+# Find the surface normal vector of the plane formed by the floor and ceiling.
+# Adjust the plane of the floor and ceiling along the normal vector to the lowest point of the ceiling and the highest point of the floor rotated by the angle of the normal vector.
+# Take the plane half way between the adjusted floor and ceiling as the slice of the globe point cloud to use to find the walls of the grid map.
+
 import math
 from collections import deque
 
