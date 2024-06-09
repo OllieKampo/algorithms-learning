@@ -7,28 +7,29 @@ import numpy as np
 EXTEND_AREA = 1.0
 
 
-def file_read(f):
+def file_read(file_path: str) -> tuple[np.ndarray, np.ndarray]:
     """
-    Reading LIDAR laser beams (angles and corresponding distance data)
+    Read the lidar data from a file and return two np.arrays with the angles
+    and distances respectively from the lidar sensor of each point.
     """
-    with open(f) as data:
+    with open(file_path) as data:
         measures = [line.split(",") for line in data]
     angles = []
     distances = []
     for measure in measures:
         angles.append(float(measure[0]))
         distances.append(float(measure[1]))
-    angles = np.array(angles)
-    distances = np.array(distances)
-    return angles, distances
+    return np.array(angles), np.array(distances)
 
 
-def bresenham(start, end):
+def bresenham(start: tuple[int, int], end: tuple[int, int]) -> np.ndarray:
     """
-    Implementation of Bresenham's line drawing algorithm
-    See en.wikipedia.org/wiki/Bresenham's_line_algorithm
-    Bresenham's Line Algorithm
-    Produces a np.array from start and end (original from roguebasin.com)
+    Implementation of Bresenham's line drawing algorithm.
+
+    This algorithm is used to determine which points in a 2D grid should be
+    plotted to form a line between two given points.
+
+    Produces a np.array from start to end, for example:
     >>> points1 = bresenham((4, 4), (6, 10))
     >>> print(points1)
     np.array([[4,4], [4,5], [5,6], [5,7], [5,8], [6,9], [6,10]])
@@ -56,7 +57,7 @@ def bresenham(start, end):
     y = y1
     points = []
     for x in range(x1, x2 + 1):
-        coord = [y, x] if is_steep else (x, y)
+        coord = (y, x) if is_steep else (x, y)
         points.append(coord)
         error -= abs(dy)
         if error < 0:
@@ -64,22 +65,31 @@ def bresenham(start, end):
             error += dx
     if swapped:  # reverse the list if the coordinates were swapped
         points.reverse()
-    points = np.array(points)
-    return points
+    return np.array(points)
 
 
-def calc_grid_map_config(ox, oy, xy_resolution):
+def calc_grid_map_config(
+    points_x: np.ndarray,
+    points_y: np.ndarray,
+    xy_resolution: float
+) -> tuple[int, int, int, int, int, int]:
     """
-    Calculates the size, and the maximum distances according to the the
-    measurement center
+    Calculates the size and the maximum distances of the grid map.
+
+    points_x: The x coordinates of the lidar data in Cartesian coordinates.
+    points_y: The y coordinates of the lidar data in Cartesian coordinates.
+    xy_resolution: The resolution of the grid map.
+
+    Returns:
+    The minimum x, minimum y, maximum x, maximum y, x width in grid cells, and
+    y width in grid cells.
     """
-    min_x = round(min(ox) - EXTEND_AREA / 2.0)
-    min_y = round(min(oy) - EXTEND_AREA / 2.0)
-    max_x = round(max(ox) + EXTEND_AREA / 2.0)
-    max_y = round(max(oy) + EXTEND_AREA / 2.0)
+    min_x = round(min(points_x) - EXTEND_AREA / 2.0)
+    min_y = round(min(points_y) - EXTEND_AREA / 2.0)
+    max_x = round(max(points_x) + EXTEND_AREA / 2.0)
+    max_y = round(max(points_y) + EXTEND_AREA / 2.0)
     xw = int(round((max_x - min_x) / xy_resolution))
     yw = int(round((max_y - min_y) / xy_resolution))
-    print("The grid map is ", xw, "x", yw, ".")
     return min_x, min_y, max_x, max_y, xw, yw
 
 
@@ -90,8 +100,15 @@ def atan_zero_to_twopi(y, x):
     return angle
 
 
-def init_flood_fill(center_point, obstacle_points, xy_points, min_coord,
-                    xy_resolution):
+def init_flood_fill(
+    center_point: tuple[int, int],
+    points_x: np.ndarray,
+    points_y: np.ndarray,
+    grid_points_x: np.ndarray,
+    grid_points_y: np.ndarray,
+    min_coord: tuple[int, int],
+    xy_resolution: float
+):
     """
     center_point: center point
     obstacle_points: detected obstacles points (x,y)
@@ -99,14 +116,12 @@ def init_flood_fill(center_point, obstacle_points, xy_points, min_coord,
     """
     center_x, center_y = center_point
     prev_ix, prev_iy = center_x - 1, center_y
-    ox, oy = obstacle_points
-    xw, yw = xy_points
     min_x, min_y = min_coord
-    occupancy_map = (np.ones((xw, yw))) * 0.5
-    for (x, y) in zip(ox, oy):
-        # x coordinate of the the occupied area
+    occupancy_map = np.ones((grid_points_x, grid_points_y)) * 0.5
+    for (x, y) in zip(points_x, points_y):
+        # x coordinate of the occupied area
         ix = int(round((x - min_x) / xy_resolution))
-        # y coordinate of the the occupied area
+        # y coordinate of the occupied area
         iy = int(round((y - min_y) / xy_resolution))
         free_area = bresenham((prev_ix, prev_iy), (ix, iy))
         for fa in free_area:
@@ -150,22 +165,37 @@ def flood_fill(center_point, occupancy_map):
                 fringe.appendleft((nx, ny + 1))
 
 
-def generate_ray_casting_grid_map(ox, oy, xy_resolution, breshen=True):
+def generate_ray_casting_grid_map(
+    points_x: np.ndarray,
+    points_y: np.ndarray,
+    xy_resolution: float,
+    breshen: bool = True
+) -> np.ndarray:
     """
-    The breshen boolean tells if it's computed with bresenham ray casting
-    (True) or with flood fill (False)
+    Generate a grid map from the lidar data using ray casting.
+
+    points_x: The x coordinates of the lidar data in Cartesian coordinates.
+    points_y: The y coordinates of the lidar data in Cartesian coordinates.
+    xy_resolution: The resolution of the grid map.
+    breshen: If True, use Bresenham ray casting. If False, use flood fill.
+
+    Returns:
+    A grid map of the environment.
     """
     min_x, min_y, max_x, max_y, x_w, y_w = calc_grid_map_config(
-        ox, oy, xy_resolution)
+        points_x, points_y, xy_resolution
+    )
+
     # default 0.5 -- [[0.5 for i in range(y_w)] for i in range(x_w)]
-    occupancy_map = np.ones((x_w, y_w)) / 2
+    occupancy_map = np.ones((x_w, y_w)) * 0.5
     center_x = int(
         round(-min_x / xy_resolution))  # center x coordinate of the grid map
     center_y = int(
         round(-min_y / xy_resolution))  # center y coordinate of the grid map
+
     # occupancy grid computed with bresenham ray casting
     if breshen:
-        for (x, y) in zip(ox, oy):
+        for (x, y) in zip(points_x, points_y):
             # x coordinate of the the occupied area
             ix = int(round((x - min_x) / xy_resolution))
             # y coordinate of the the occupied area
@@ -179,34 +209,48 @@ def generate_ray_casting_grid_map(ox, oy, xy_resolution, breshen=True):
             occupancy_map[ix + 1][iy] = 1.0  # extend the occupied area
             occupancy_map[ix][iy + 1] = 1.0  # extend the occupied area
             occupancy_map[ix + 1][iy + 1] = 1.0  # extend the occupied area
+
     # occupancy grid computed with with flood fill
     else:
-        occupancy_map = init_flood_fill((center_x, center_y), (ox, oy),
-                                        (x_w, y_w),
-                                        (min_x, min_y), xy_resolution)
+        occupancy_map = init_flood_fill(
+            (center_x, center_y),
+            points_x,
+            points_y,
+            x_w,
+            y_w,
+            (min_x, min_y),
+            xy_resolution
+        )
         flood_fill((center_x, center_y), occupancy_map)
         occupancy_map = np.array(occupancy_map, dtype=float)
-        for (x, y) in zip(ox, oy):
+        for (x, y) in zip(points_x, points_y):
             ix = int(round((x - min_x) / xy_resolution))
             iy = int(round((y - min_y) / xy_resolution))
             occupancy_map[ix][iy] = 1.0  # occupied area 1.0
             occupancy_map[ix + 1][iy] = 1.0  # extend the occupied area
             occupancy_map[ix][iy + 1] = 1.0  # extend the occupied area
             occupancy_map[ix + 1][iy + 1] = 1.0  # extend the occupied area
-    return occupancy_map, min_x, max_x, min_y, max_y, xy_resolution
+
+    return occupancy_map
 
 
 def main():
-    """
-    Example usage
-    """
-    print(__file__, "start")
     xy_resolution = 0.02  # x-y grid resolution
+
+    # Load the lidar data as polar coordinates.
     ang, dist = file_read("lidar01.csv")
-    ox = np.sin(ang) * dist
-    oy = np.cos(ang) * dist
-    occupancy_map, min_x, max_x, min_y, max_y, xy_resolution = \
-        generate_ray_casting_grid_map(ox, oy, xy_resolution, True)
+
+    # Convert the polar coordinates to Cartesian coordinates.
+    points_x = np.sin(ang) * dist
+    points_y = np.cos(ang) * dist
+
+    occupancy_map = generate_ray_casting_grid_map(
+        points_x,
+        points_y,
+        xy_resolution,
+        breshen=False
+    )
+
     xy_res = np.array(occupancy_map).shape
     plt.figure(1, figsize=(10, 4))
     plt.subplot(122)
@@ -218,7 +262,7 @@ def main():
     plt.grid(True, which="minor", color="w", linewidth=0.6, alpha=0.5)
     plt.colorbar()
     plt.subplot(121)
-    plt.plot([oy, np.zeros(np.size(oy))], [ox, np.zeros(np.size(oy))], "ro-")
+    plt.plot([points_y, np.zeros(np.size(points_y))], [points_x, np.zeros(np.size(points_y))], "ro-")
     plt.axis("equal")
     plt.plot(0.0, 0.0, "ob")
     plt.gca().set_aspect("equal", "box")
