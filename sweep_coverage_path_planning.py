@@ -1,3 +1,19 @@
+"""
+The highlighted code implements the Sweep Coverage Path Planning algorithm. Here's a high-level description of how it works:
+
+1. The algorithm starts by defining a grid map, which is a 2D array representing the area to be covered. Each cell in the grid can be in one of three states: unvisited, visited, or obstacle.
+
+2. The algorithm then defines a starting point and a direction of movement. The direction of movement is typically along one of the axes of the grid.
+
+3. The algorithm begins to move in the defined direction, marking each cell it passes as visited. If it encounters an obstacle or the edge of the grid, it changes direction and continues the sweep in the opposite direction.
+
+4. This process continues until all cells have been visited. The path taken by the algorithm represents the coverage path.
+
+5. The algorithm also keeps track of the path it has taken, allowing it to return to the starting point once all cells have been visited.
+
+This algorithm is simple and efficient, but it may not find the shortest possible path in environments with complex obstacle layouts. It's best suited for environments with few obstacles and where the cost of turning is low.
+"""
+
 import math
 from enum import IntEnum
 from functools import total_ordering
@@ -302,10 +318,10 @@ class SweepSearcher:
 
     def __init__(
         self,
-        moving_direction,
-        sweep_direction,
-        x_inds_goal_y,
-        goal_y
+        moving_direction: SweepDirection,
+        sweep_direction: MovingDirection,
+        x_inds_goal_y: list[int],
+        goal_y: int
     ) -> None:
         self.moving_direction = moving_direction
         self.sweep_direction = sweep_direction
@@ -314,16 +330,46 @@ class SweepSearcher:
         self.x_indexes_goal_y = x_inds_goal_y
         self.goal_y = goal_y
 
-    def move_target_grid(self, c_x_index, c_y_index, grid_map):
+    def move_target_grid(
+        self,
+        c_x_index: int,
+        c_y_index: int,
+        grid_map: GridMap
+    ) -> tuple[int | None, int | None]:
+        """
+        This method could be used in a path planning algorithm to move a
+        target grid in a certain direction while avoiding obstacles.
+
+        It takes three parameters: `c_x_index` and `c_y_index` (the current
+        x and y coordinates of the target grid), and `grid_map`
+        (which represents a grid map of an area).
+
+        The method returns a tuple of two elements: the new x and y
+        coordinates of the target grid after the move.
+        """
+        # It calculates the new x-coordinate (`n_x_index`) by adding the
+        # moving direction to the current x-coordinate.
+        # The new y-coordinate (`n_y_index`) is the same as the current y-coordinate.
         n_x_index = self.moving_direction + c_x_index
         n_y_index = c_y_index
 
-        # found safe grid
+        # It checks if the cell at the new coordinates is not occupied
+        # and if not, returns the new coordinates.
         if not check_occupied(n_x_index, n_y_index, grid_map):
             return n_x_index, n_y_index
-        else:  # occupied
+
+        else:
+            # If the cell is occupied, it tries to find a safe turning grid
+            # using the `find_safe_turning_grid` method.
             next_c_x_index, next_c_y_index = self.find_safe_turning_grid(
-                c_x_index, c_y_index, grid_map)
+                c_x_index,
+                c_y_index,
+                grid_map
+            )
+
+            # If a safe turning grid is not found, it tries to move the target
+            # grid backward. If the backward cell is also occupied, it returns
+            # `None, None` to indicate that no move is possible.
             if (next_c_x_index is None) and (next_c_y_index is None):
                 # moving backward
                 next_c_x_index = -self.moving_direction + c_x_index
@@ -331,24 +377,53 @@ class SweepSearcher:
                 if check_occupied(next_c_x_index, next_c_y_index, grid_map, FloatGrid(1.0)):
                     # moved backward, but the grid is occupied by obstacle
                     return None, None
+
+            # If a safe turning grid is found, it moves the target grid to the
+            # safe turning grid and keeps moving in the same direction until
+            # it reaches an occupied cell. It then swaps the moving direction
+            # using the `swap_moving_direction` method and returns the
+            # coordinates of the last free cell.
             else:
                 # keep moving until end
                 while not check_occupied(next_c_x_index + self.moving_direction, next_c_y_index, grid_map):
                     next_c_x_index += self.moving_direction
                 self.swap_moving_direction()
+
             return next_c_x_index, next_c_y_index
 
     def find_safe_turning_grid(self, c_x_index, c_y_index, grid_map):
+        """
+        This method could be used in a path planning algorithm to find a safe
+        grid cell to turn into when the current moving direction is blocked by
+        an obstacle.
 
+        It is used to find a safe grid cell to turn into when the current
+        moving direction is blocked by an obstacle. It takes three parameters:
+        c_x_index and c_y_index (the current x and y coordinates of the target
+        grid), and grid_map (an instance of the GridMap class, which
+        represents a grid map of an area).
+        """
+        # It iterates over the cells in the turning window. The turning window
+        # is a list of relative coordinates that define the possible
+        # directions to turn into. The relative coordinates are added to the
+        # current coordinates to get the absolute coordinates of the turning
+        # grid.
         for (d_x_ind, d_y_ind) in self.turning_window:
 
+            # For each cell in the turning window, it calculates the absolute
+            # coordinates (next_x_ind, next_y_ind) by adding the relative
+            # coordinates (d_x_ind, d_y_ind) to the current coordinates.
             next_x_ind = d_x_ind + c_x_index
             next_y_ind = d_y_ind + c_y_index
 
-            # found safe grid
+            # It checks if the cell at the absolute coordinates is not
+            # occupied. If a cell is not occupied, it returns the absolute
+            # coordinates. This means that the cell is a safe turning grid.
             if not check_occupied(next_x_ind, next_y_ind, grid_map):
                 return next_x_ind, next_y_ind
 
+        # If all cells in the turning window are occupied, it returns
+        # None, None to indicate that no safe turning grid is found.
         return None, None
 
     def is_search_done(self, grid_map):
@@ -356,7 +431,7 @@ class SweepSearcher:
             if not check_occupied(ix, self.goal_y, grid_map):
                 return False
 
-        # all lower grid is occupied
+        # All lower grid is occupied.
         return True
 
     def update_turning_window(self):
@@ -388,7 +463,7 @@ class SweepSearcher:
         elif self.moving_direction == self.MovingDirection.LEFT:
             return max(x_inds), y_ind
 
-        raise ValueError("self.moving direction is invalid ")
+        raise ValueError("self.moving direction is invalid")
 
 
 def find_sweep_direction_and_start_position(
@@ -543,21 +618,23 @@ def sweep_path_search(
 ) -> tuple[list[float], list[float]]:
     # search start grid
     c_x_index, c_y_index = sweep_searcher.search_start_grid(grid_map)
+
     if not grid_map.set_value_from_xy_index(c_x_index, c_y_index, FloatGrid(0.5)):
         print("Cannot find start grid")
         return [], []
 
     x, y = grid_map.calc_grid_central_xy_position_from_xy_index(c_x_index,
                                                                 c_y_index)
-    px, py = [x], [y]
+    px = [x]
+    py = [y]
 
     while True:
         c_x_index, c_y_index = sweep_searcher.move_target_grid(c_x_index,
                                                                c_y_index,
                                                                grid_map)
 
-        if sweep_searcher.is_search_done(grid_map) or (
-                c_x_index is None or c_y_index is None):
+        if (sweep_searcher.is_search_done(grid_map)
+                or (c_x_index is None or c_y_index is None)):
             break
 
         x, y = grid_map.calc_grid_central_xy_position_from_xy_index(
