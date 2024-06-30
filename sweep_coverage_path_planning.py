@@ -227,7 +227,7 @@ class GridMap:
         float_data_array = np.array(self.data)
         if not ax:
             fig, ax = plt.subplots()
-        heat_map = ax.pcolor(grid_data, cmap="Blues", vmin=0.0, vmax=1.0)
+        heat_map = ax.pcolor(float_data_array, cmap="Blues", vmin=0.0, vmax=1.0)
         plt.axis("equal")
 
         return heat_map
